@@ -1,0 +1,1784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProScheduler - Local Task Tracker & Time Tracker</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #f8fafc;
+        }
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Drag and Drop styling */
+        .kanban-column {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .kanban-column.drag-over {
+            background-color: #e0e7ff !important;
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+        }
+        .task-card {
+            cursor: grab;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+        }
+        .task-card:active {
+            cursor: grabbing;
+        }
+        .task-card.dragging {
+            opacity: 0.45;
+            transform: scale(0.98);
+        }
+
+        /* Pulsing indicator for active timers */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+        }
+        .pulse-active {
+            animation: pulse-ring 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+        }
+
+        /* Confetti canvas */
+        #confetti-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 99999;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 antialiased selection:bg-indigo-500 selection:text-white">
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- Top Navigation Header -->
+    <header class="bg-white border-b border-slate-200 z-30 shadow-xs">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Brand & Logo -->
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-200">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-xl font-bold bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-800 bg-clip-text text-transparent">ProScheduler</h1>
+                            <span class="text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full">Local Edition</span>
+                        </div>
+                        <p class="text-xs text-slate-500 hidden sm:block">Schedule tasks, pause & resume progress, and track time spent</p>
+                    </div>
+                </div>
+
+                <!-- Header Actions -->
+                <div class="flex items-center gap-2">
+                    <!-- Backup & Data Controls -->
+                    <div class="relative inline-block text-left">
+                        <button id="data-menu-btn" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200">
+                            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            <span>Data & Backup</span>
+                            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                        <!-- Dropdown -->
+                        <div id="data-dropdown" class="hidden absolute right-0 mt-2 w-56 rounded-xl bg-white shadow-xl ring-1 ring-black/5 border border-slate-100 py-1.5 z-50">
+                            <button id="export-json-btn" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Export Backup (JSON)
+                            </button>
+                            <button id="export-csv-btn" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                Export Timesheet (CSV)
+                            </button>
+                            <label for="import-json-input" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 cursor-pointer">
+                                <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                                Import Backup (JSON)
+                            </label>
+                            <input type="file" id="import-json-input" accept=".json" class="hidden">
+                            <hr class="my-1 border-slate-100">
+                            <button id="load-sample-btn" class="w-full text-left px-4 py-2 text-xs text-amber-700 hover:bg-amber-50 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                Load Sample Tasks
+                            </button>
+                            <hr class="my-1 border-slate-100">
+                            <button id="clear-completed-btn" class="w-full text-left px-4 py-2 text-xs text-orange-600 hover:bg-orange-50 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                                Clear Completed Tasks
+                            </button>
+                            <button id="clear-all-btn" class="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                Clear All Tasks
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Quick Add Trigger Button -->
+                    <button id="toggle-add-panel-btn" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                        <span>New Task</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Top Statistics Dashboard Bar -->
+        <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <!-- Total Tasks -->
+            <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-medium text-slate-500">Total Tasks</p>
+                    <p id="stat-total" class="text-2xl font-bold text-slate-800 mt-0.5">0</p>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                </div>
+            </div>
+
+            <!-- In Progress (Active / Paused) -->
+            <div class="bg-white p-4 rounded-xl border border-amber-200/80 shadow-xs flex items-center justify-between">
+                <div>
+                    <div class="flex items-center gap-1.5">
+                        <p class="text-xs font-medium text-slate-500">In Progress</p>
+                        <span id="stat-active-badge" class="hidden text-[10px] font-bold px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded-full animate-pulse">Running</span>
+                    </div>
+                    <div class="flex items-baseline gap-2 mt-0.5">
+                        <p id="stat-inprogress" class="text-2xl font-bold text-amber-600">0</p>
+                        <span id="stat-inprogress-breakdown" class="text-xs text-slate-400 font-medium">0 active · 0 paused</span>
+                    </div>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                </div>
+            </div>
+
+            <!-- Completed -->
+            <div class="bg-white p-4 rounded-xl border border-emerald-200/80 shadow-xs flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-medium text-slate-500">Completed</p>
+                    <div class="flex items-baseline gap-2 mt-0.5">
+                        <p id="stat-completed" class="text-2xl font-bold text-emerald-600">0</p>
+                        <span id="stat-completion-rate" class="text-xs text-slate-400 font-medium">0%</span>
+                    </div>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+            </div>
+
+            <!-- Total Working Time -->
+            <div class="bg-white p-4 rounded-xl border border-indigo-200/80 shadow-xs flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-medium text-slate-500">Total Work Time</p>
+                    <p id="stat-total-time" class="text-2xl font-bold text-indigo-600 font-mono mt-0.5">00m 00s</p>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+            </div>
+
+            <!-- Overdue Tasks -->
+            <div class="bg-white p-4 rounded-xl border border-rose-200/80 shadow-xs flex items-center justify-between col-span-2 sm:col-span-1">
+                <div>
+                    <p class="text-xs font-medium text-slate-500">Overdue Tasks</p>
+                    <p id="stat-overdue" class="text-2xl font-bold text-rose-600 mt-0.5">0</p>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                </div>
+            </div>
+        </section>
+
+        <!-- New Task Creation Form Panel -->
+        <section id="add-task-panel" class="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5 transition-all">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+                    <h2 class="text-base font-bold text-slate-800">Schedule New Task</h2>
+                </div>
+                <span class="text-xs text-slate-400">Press <kbd class="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-[10px] font-mono">Enter</kbd> to quickly add</span>
+            </div>
+
+            <div class="space-y-4">
+                <!-- Title & Add Button -->
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <div class="relative flex-grow">
+                        <input type="text" id="task-title-input" placeholder="What needs to be scheduled or done?" class="w-full pl-4 pr-10 py-3 bg-slate-50 hover:bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 outline-none text-sm font-medium transition-all">
+                    </div>
+                    <button id="add-task-btn" class="sm:w-auto px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl shadow-md shadow-indigo-200 hover:shadow-indigo-300 transition-all flex items-center justify-center gap-2 shrink-0">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                        <span>Add to Schedule</span>
+                    </button>
+                </div>
+
+                <!-- Scheduling & Metadata Row -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 pt-1 text-xs">
+                    <!-- Scheduled Date & Time -->
+                    <div>
+                        <label for="task-date-input" class="block font-semibold text-slate-600 mb-1 flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                            Scheduled Date & Time
+                        </label>
+                        <input type="datetime-local" id="task-date-input" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 outline-none text-xs text-slate-700">
+                    </div>
+
+                    <!-- Approx. Completion Date (Optional) -->
+                    <div>
+                        <label for="task-estimated-date-input" class="block font-semibold text-slate-600 mb-1 flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                            Approx. Completion (Optional)
+                        </label>
+                        <input type="datetime-local" id="task-estimated-date-input" title="Target/Approximate completion date (optional)" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 outline-none text-xs text-slate-700">
+                    </div>
+
+                    <!-- Priority Selector -->
+                    <div>
+                        <label for="task-priority-input" class="block font-semibold text-slate-600 mb-1 flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" /></svg>
+                            Priority
+                        </label>
+                        <select id="task-priority-input" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 outline-none text-xs text-slate-700">
+                            <option value="medium" selected>🟡 Medium Priority</option>
+                            <option value="high">🟠 High Priority</option>
+                            <option value="urgent">🔴 Urgent / Critical</option>
+                            <option value="low">🟢 Low Priority</option>
+                        </select>
+                    </div>
+
+                    <!-- Category / Tag -->
+                    <div>
+                        <label for="task-category-input" class="block font-semibold text-slate-600 mb-1 flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+                            Category / Tag
+                        </label>
+                        <input type="text" id="task-category-input" placeholder="e.g. Work, Meeting, Dev, Personal" list="category-suggestions" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 outline-none text-xs text-slate-700">
+                        <datalist id="category-suggestions">
+                            <option value="Feature">
+                            <option value="Bug Fix">
+                            <option value="Meeting">
+                            <option value="Research">
+                            <option value="Personal">
+                            <option value="Maintenance">
+                        </datalist>
+                    </div>
+
+                    <!-- Optional Short Description / Note -->
+                    <div>
+                        <label for="task-desc-input" class="block font-semibold text-slate-600 mb-1 flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" /></svg>
+                            Notes (Optional)
+                        </label>
+                        <input type="text" id="task-desc-input" placeholder="Brief notes or acceptance criteria" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 outline-none text-xs text-slate-700">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Search, Filter & View Controls -->
+        <section class="bg-white rounded-xl border border-slate-200/80 p-3 shadow-2xs">
+            <div class="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
+                <!-- Search Bar -->
+                <div class="relative flex-grow max-w-lg">
+                    <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    <input type="text" id="search-input" placeholder="Search tasks by title, note, or category..." class="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-indigo-500 focus:bg-white transition-colors">
+                    <button id="clear-search-btn" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs">✕</button>
+                </div>
+
+                <!-- Filters & Sort Group -->
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                    <!-- Filter Priority -->
+                    <select id="filter-priority" class="px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-medium outline-none focus:border-indigo-500">
+                        <option value="all">All Priorities</option>
+                        <option value="urgent">🔴 Urgent</option>
+                        <option value="high">🟠 High</option>
+                        <option value="medium">🟡 Medium</option>
+                        <option value="low">🟢 Low</option>
+                    </select>
+
+                    <!-- Filter Due / Schedule Date -->
+                    <select id="filter-due" class="px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-medium outline-none focus:border-indigo-500">
+                        <option value="all">All Dates</option>
+                        <option value="overdue">⚠️ Overdue Only</option>
+                        <option value="today">📅 Due Today</option>
+                        <option value="upcoming">🗓️ Upcoming</option>
+                        <option value="has_date">With Scheduled Date</option>
+                        <option value="has_target">🎯 With Target Finish Date</option>
+                    </select>
+
+                    <!-- Sort By -->
+                    <select id="sort-by" class="px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-medium outline-none focus:border-indigo-500">
+                        <option value="created_desc">Created (Newest First)</option>
+                        <option value="date_asc">Scheduled Date (Soonest First)</option>
+                        <option value="target_asc">Target Finish (Soonest First)</option>
+                        <option value="priority_desc">Priority (Highest First)</option>
+                        <option value="time_desc">Time Spent (Most First)</option>
+                        <option value="title_asc">Title (A-Z)</option>
+                    </select>
+
+                    <!-- Reset Filters Button -->
+                    <button id="reset-filters-btn" title="Reset all filters" class="px-2.5 py-2 text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors font-medium">
+                        Reset
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Kanban Board Columns -->
+        <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+            <!-- COLUMN 1: TO DO -->
+            <div id="todo-column" class="kanban-column bg-slate-100/80 border-2 border-slate-200/90 rounded-2xl p-4 flex flex-col min-h-[500px]">
+                <!-- Column Header -->
+                <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-slate-400"></span>
+                        <h3 class="font-bold text-slate-800 text-sm uppercase tracking-wide">To Do</h3>
+                    </div>
+                    <span id="todo-count" class="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">0</span>
+                </div>
+                <!-- Drop Container -->
+                <div id="todo-tasks" class="space-y-3 flex-grow min-h-[400px]">
+                    <!-- Tasks will render here -->
+                </div>
+            </div>
+
+            <!-- COLUMN 2: IN PROGRESS (With Active/Pause Timers) -->
+            <div id="inprogress-column" class="kanban-column bg-amber-50/60 border-2 border-amber-200/70 rounded-2xl p-4 flex flex-col min-h-[500px]">
+                <!-- Column Header -->
+                <div class="flex items-center justify-between pb-3 mb-3 border-b border-amber-200/80">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-amber-500 animate-pulse"></span>
+                        <h3 class="font-bold text-amber-900 text-sm uppercase tracking-wide">In Progress</h3>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span id="inprogress-count" class="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">0</span>
+                    </div>
+                </div>
+                <!-- Drop Container -->
+                <div id="inprogress-tasks" class="space-y-3 flex-grow min-h-[400px]">
+                    <!-- Tasks with live timers will render here -->
+                </div>
+            </div>
+
+            <!-- COLUMN 3: DONE (With Completion Details & Total Time Taken) -->
+            <div id="done-column" class="kanban-column bg-emerald-50/60 border-2 border-emerald-200/70 rounded-2xl p-4 flex flex-col min-h-[500px]">
+                <!-- Column Header -->
+                <div class="flex items-center justify-between pb-3 mb-3 border-b border-emerald-200/80">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+                        <h3 class="font-bold text-emerald-900 text-sm uppercase tracking-wide">Done</h3>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span id="done-count" class="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900">0</span>
+                    </div>
+                </div>
+                <!-- Drop Container -->
+                <div id="done-tasks" class="space-y-3 flex-grow min-h-[400px]">
+                    <!-- Completed tasks will render here -->
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Task Edit / View Modal -->
+    <div id="task-modal" class="hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden transform transition-all">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+                <div class="flex items-center gap-2">
+                    <span id="modal-status-badge" class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">TO DO</span>
+                    <h3 class="font-bold text-slate-800 text-base">Edit Task & Time Details</h3>
+                </div>
+                <button id="close-modal-btn" class="text-slate-400 hover:text-slate-600 rounded-lg p-1 hover:bg-slate-100">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 space-y-4 max-h-[75vh] overflow-y-auto text-xs">
+                <input type="hidden" id="modal-task-id">
+
+                <!-- Title -->
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1 text-xs">Task Title</label>
+                    <input type="text" id="modal-title-input" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 outline-none">
+                </div>
+
+                <!-- Notes / Description -->
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1 text-xs">Notes & Details</label>
+                    <textarea id="modal-desc-input" rows="3" placeholder="Add detailed notes or requirements..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 outline-none"></textarea>
+                </div>
+
+                <!-- Scheduling & Priority Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1 text-xs">Scheduled Date & Time</label>
+                        <input type="datetime-local" id="modal-date-input" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 outline-none">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1 text-xs">Approx. Completion (Optional)</label>
+                        <input type="datetime-local" id="modal-estimated-date-input" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 outline-none">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1 text-xs">Priority</label>
+                        <select id="modal-priority-input" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 outline-none">
+                            <option value="urgent">🔴 Urgent</option>
+                            <option value="high">🟠 High</option>
+                            <option value="medium">🟡 Medium</option>
+                            <option value="low">🟢 Low</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Category -->
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1 text-xs">Category Tag</label>
+                    <input type="text" id="modal-category-input" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 outline-none">
+                </div>
+
+                <!-- Time Spent & Manual Adjustment Section -->
+                <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="font-semibold text-slate-700 flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            Total Time Spent In Progress
+                        </span>
+                        <span id="modal-time-display" class="font-mono font-bold text-sm text-indigo-600">00m 00s</span>
+                    </div>
+
+                    <!-- Manual time adjust buttons -->
+                    <div class="flex items-center gap-2 pt-1">
+                        <span class="text-[11px] text-slate-500">Quick Adjust:</span>
+                        <button type="button" class="adjust-time-btn px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded text-[11px] font-medium" data-mins="5">+5m</button>
+                        <button type="button" class="adjust-time-btn px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded text-[11px] font-medium" data-mins="15">+15m</button>
+                        <button type="button" class="adjust-time-btn px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded text-[11px] font-medium" data-mins="60">+1h</button>
+                        <button type="button" class="adjust-time-btn px-2 py-1 bg-white hover:bg-rose-50 hover:text-rose-600 border border-slate-200 rounded text-[11px] font-medium" data-mins="-15">-15m</button>
+                        <button type="button" id="modal-reset-time-btn" class="ml-auto px-2 py-1 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 rounded text-[11px] font-semibold">Reset Time</button>
+                    </div>
+                </div>
+
+                <!-- Timestamps Audit Info -->
+                <div class="space-y-1 text-[11px] text-slate-400 border-t border-slate-100 pt-3">
+                    <p id="modal-created-info">Created: -</p>
+                    <p id="modal-completed-info">Completed: -</p>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button id="cancel-modal-btn" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">Cancel</button>
+                <button id="save-modal-btn" class="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirmation Modal (Clean replacement for native confirm) -->
+    <div id="confirm-modal" class="hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden p-6 space-y-4">
+            <div class="flex items-center gap-3">
+                <div id="confirm-icon" class="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                </div>
+                <div>
+                    <h4 id="confirm-title" class="font-bold text-slate-800 text-base">Confirm Action</h4>
+                    <p id="confirm-message" class="text-xs text-slate-500 mt-0.5">Are you sure you want to proceed?</p>
+                </div>
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button id="confirm-cancel-btn" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
+                <button id="confirm-proceed-btn" class="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Toast Notification Container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
+        <!-- Toasts inject here -->
+    </div>
+
+    <!-- Application JavaScript Logic -->
+    <script>
+        /**
+         * ProScheduler - Task Tracker & Time Tracker
+         * Pure Vanilla JavaScript + LocalStorage (Zero Database Required)
+         */
+
+        // --- Application State ---
+        let tasks = [];
+        let activeFilters = {
+            search: '',
+            priority: 'all',
+            due: 'all',
+            sortBy: 'created_desc'
+        };
+
+        const STORAGE_KEY = 'pro_scheduler_tasks_v2';
+        const LEGACY_STORAGE_KEY = 'todoTasks';
+
+        // DOM Elements
+        const taskTitleInput = document.getElementById('task-title-input');
+        const taskDateInput = document.getElementById('task-date-input');
+        const taskEstimatedDateInput = document.getElementById('task-estimated-date-input');
+        const taskPriorityInput = document.getElementById('task-priority-input');
+        const taskCategoryInput = document.getElementById('task-category-input');
+        const taskDescInput = document.getElementById('task-desc-input');
+        const addTaskBtn = document.getElementById('add-task-btn');
+        const toggleAddPanelBtn = document.getElementById('toggle-add-panel-btn');
+
+        const todoTasksContainer = document.getElementById('todo-tasks');
+        const inprogressTasksContainer = document.getElementById('inprogress-tasks');
+        const doneTasksContainer = document.getElementById('done-tasks');
+
+        const searchInput = document.getElementById('search-input');
+        const clearSearchBtn = document.getElementById('clear-search-btn');
+        const filterPriority = document.getElementById('filter-priority');
+        const filterDue = document.getElementById('filter-due');
+        const sortBy = document.getElementById('sort-by');
+        const resetFiltersBtn = document.getElementById('reset-filters-btn');
+
+        // Modal Elements
+        const taskModal = document.getElementById('task-modal');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const cancelModalBtn = document.getElementById('cancel-modal-btn');
+        const saveModalBtn = document.getElementById('save-modal-btn');
+        const modalTaskId = document.getElementById('modal-task-id');
+        const modalTitleInput = document.getElementById('modal-title-input');
+        const modalDescInput = document.getElementById('modal-desc-input');
+        const modalDateInput = document.getElementById('modal-date-input');
+        const modalEstimatedDateInput = document.getElementById('modal-estimated-date-input');
+        const modalPriorityInput = document.getElementById('modal-priority-input');
+        const modalCategoryInput = document.getElementById('modal-category-input');
+        const modalStatusBadge = document.getElementById('modal-status-badge');
+        const modalTimeDisplay = document.getElementById('modal-time-display');
+        const modalResetTimeBtn = document.getElementById('modal-reset-time-btn');
+        const modalCreatedInfo = document.getElementById('modal-created-info');
+        const modalCompletedInfo = document.getElementById('modal-completed-info');
+
+        // Confirm Modal Elements
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmTitle = document.getElementById('confirm-title');
+        const confirmMessage = document.getElementById('confirm-message');
+        const confirmProceedBtn = document.getElementById('confirm-proceed-btn');
+        const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+
+        // Top Dropdown & Actions
+        const dataMenuBtn = document.getElementById('data-menu-btn');
+        const dataDropdown = document.getElementById('data-dropdown');
+        const exportJsonBtn = document.getElementById('export-json-btn');
+        const exportCsvBtn = document.getElementById('export-csv-btn');
+        const importJsonInput = document.getElementById('import-json-input');
+        const loadSampleBtn = document.getElementById('load-sample-btn');
+        const clearCompletedBtn = document.getElementById('clear-completed-btn');
+        const clearAllBtn = document.getElementById('clear-all-btn');
+
+        // Confetti instance
+        const confettiCanvas = document.getElementById('confetti-canvas');
+        const myConfetti = confetti.create(confettiCanvas, {
+            resize: true,
+            useWorker: true
+        });
+
+        // Set default datetime to tomorrow 10:00 AM for convenience
+        function setDefaultScheduleDate() {
+            const now = new Date();
+            now.setDate(now.getDate() + 1);
+            now.setHours(10, 0, 0, 0);
+            const isoString = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            taskDateInput.value = isoString;
+        }
+
+        // --- Helper: Format Milliseconds to "Xh Ym Zs" or "00m 00s" ---
+        function formatDuration(ms, detailed = true) {
+            if (!ms || ms <= 0) return '00m 00s';
+            const totalSec = Math.floor(ms / 1000);
+            const hours = Math.floor(totalSec / 3600);
+            const minutes = Math.floor((totalSec % 3600) / 60);
+            const seconds = totalSec % 60;
+
+            if (detailed) {
+                const pad = (n) => String(n).padStart(2, '0');
+                if (hours > 0) {
+                    return `${hours}h ${pad(minutes)}m ${pad(seconds)}s`;
+                }
+                return `${pad(minutes)}m ${pad(seconds)}s`;
+            } else {
+                if (hours > 0) return `${hours}h ${minutes}m`;
+                if (minutes > 0) return `${minutes}m`;
+                return `${seconds}s`;
+            }
+        }
+
+        // Helper: Format Date & Time for display
+        function formatDateTime(dateVal) {
+            if (!dateVal) return '';
+            const date = new Date(dateVal);
+            if (isNaN(date.getTime())) return '';
+            return date.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+        }
+
+        // Helper: Check Due Status (Overdue, Due Today, Upcoming)
+        function getDueStatus(scheduledDate, isDone = false) {
+            if (!scheduledDate) return null;
+            const targetDate = new Date(scheduledDate);
+            if (isNaN(targetDate.getTime())) return null;
+
+            if (isDone) {
+                return {
+                    label: `Scheduled: ${formatDateTime(targetDate)}`,
+                    isOverdue: false,
+                    isToday: false,
+                    badgeClass: 'bg-slate-100 text-slate-600 border-slate-200'
+                };
+            }
+
+            const now = new Date();
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+            if (targetDate < now) {
+                return {
+                    label: `⚠️ Overdue (${formatDateTime(targetDate)})`,
+                    isOverdue: true,
+                    isToday: false,
+                    badgeClass: 'bg-rose-50 text-rose-700 border-rose-200 font-semibold'
+                };
+            } else if (targetDate >= startOfToday && targetDate <= endOfToday) {
+                return {
+                    label: `📅 Due Today (${targetDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })})`,
+                    isOverdue: false,
+                    isToday: true,
+                    badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-semibold'
+                };
+            } else {
+                return {
+                    label: `🗓️ ${formatDateTime(targetDate)}`,
+                    isOverdue: false,
+                    isToday: false,
+                    badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                };
+            }
+        }
+
+        // Helper: Priority Badge formatting
+        function getPriorityBadge(priority) {
+            switch (priority) {
+                case 'urgent':
+                    return '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">🔴 Urgent</span>';
+                case 'high':
+                    return '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 border border-orange-200 flex items-center gap-1">🟠 High</span>';
+                case 'low':
+                    return '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">🟢 Low</span>';
+                case 'medium':
+                default:
+                    return '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">🟡 Medium</span>';
+            }
+        }
+
+        // --- Toast Notification Helper ---
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `pointer-events-auto flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg border text-xs font-semibold transform transition-all duration-300 translate-y-3 opacity-0`;
+
+            if (type === 'success') {
+                toast.classList.add('bg-emerald-600', 'text-white', 'border-emerald-500');
+                toast.innerHTML = `<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg><span>${message}</span>`;
+            } else if (type === 'error') {
+                toast.classList.add('bg-rose-600', 'text-white', 'border-rose-500');
+                toast.innerHTML = `<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg><span>${message}</span>`;
+            } else {
+                toast.classList.add('bg-slate-800', 'text-white', 'border-slate-700');
+                toast.innerHTML = `<svg class="w-4 h-4 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span>${message}</span>`;
+            }
+
+            container.appendChild(toast);
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-3', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-x-4');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // --- Custom Confirmation Dialog ---
+        function showConfirm(title, message, onProceed) {
+            confirmTitle.textContent = title;
+            confirmMessage.textContent = message;
+            confirmModal.classList.remove('hidden');
+
+            const handleProceed = () => {
+                cleanup();
+                onProceed();
+            };
+
+            const cleanup = () => {
+                confirmModal.classList.add('hidden');
+                confirmProceedBtn.removeEventListener('click', handleProceed);
+                confirmCancelBtn.removeEventListener('click', cleanup);
+            };
+
+            confirmProceedBtn.addEventListener('click', handleProceed);
+            confirmCancelBtn.addEventListener('click', cleanup);
+        }
+
+        // --- Persistence: LocalStorage Management & Migration ---
+        function saveTasks() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+
+            // Also keep legacy format in sync for compatibility
+            const legacy = { todo: [], inprogress: [], done: [] };
+            tasks.forEach(t => {
+                if (t.status === 'todo') legacy.todo.push({ id: t.id, text: t.title });
+                else if (t.status === 'inprogress') legacy.inprogress.push({ id: t.id, text: t.title });
+                else if (t.status === 'done') legacy.done.push({ id: t.id, text: t.title, isDone: true });
+            });
+            localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(legacy));
+
+            updateDashboardStats();
+        }
+
+        function loadTasks() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                try {
+                    tasks = JSON.parse(stored);
+                } catch (e) {
+                    console.error('Failed to parse stored tasks, resetting to empty', e);
+                    tasks = [];
+                }
+            } else {
+                // Check legacy format
+                const legacyStored = localStorage.getItem(LEGACY_STORAGE_KEY);
+                if (legacyStored) {
+                    try {
+                        const legacy = JSON.parse(legacyStored);
+                        tasks = [];
+                        (legacy.todo || []).forEach(item => {
+                            tasks.push(createTaskObject(item.text, 'todo', item.id));
+                        });
+                        (legacy.inprogress || []).forEach(item => {
+                            tasks.push(createTaskObject(item.text, 'inprogress', item.id));
+                        });
+                        (legacy.done || []).forEach(item => {
+                            const t = createTaskObject(item.text, 'done', item.id);
+                            t.completedAt = Date.now();
+                            tasks.push(t);
+                        });
+                        saveTasks();
+                    } catch (e) {
+                        tasks = [];
+                    }
+                } else {
+                    tasks = [];
+                }
+            }
+
+            renderAllTasks();
+            updateDashboardStats();
+        }
+
+        // --- Task Object Factory ---
+        function createTaskObject(title, status = 'todo', id = null) {
+            return {
+                id: id || 'task-' + Date.now() + '-' + Math.random().toString(36).substr(2, 8),
+                title: title.trim(),
+                description: taskDescInput.value.trim() || '',
+                status: status, // 'todo' | 'inprogress' | 'done'
+                priority: taskPriorityInput.value || 'medium',
+                category: taskCategoryInput.value.trim() || 'General',
+                createdAt: Date.now(),
+                scheduledDate: taskDateInput.value ? new Date(taskDateInput.value).toISOString() : null,
+                estimatedDate: taskEstimatedDateInput.value ? new Date(taskEstimatedDateInput.value).toISOString() : null,
+                completedAt: status === 'done' ? Date.now() : null,
+                // Time tracking state:
+                inProgressState: status === 'inprogress' ? 'active' : 'idle', // 'active' | 'paused' | 'idle'
+                totalTimeSpentMs: 0,
+                lastStartedAt: status === 'inprogress' ? Date.now() : null
+            };
+        }
+
+        // --- Live Timer Engine ---
+        // Computes active time spent for task
+        function getCurrentTaskTimeMs(task) {
+            let total = task.totalTimeSpentMs || 0;
+            if (task.status === 'inprogress' && task.inProgressState === 'active' && task.lastStartedAt) {
+                total += (Date.now() - task.lastStartedAt);
+            }
+            return total;
+        }
+
+        // Update all ticking timers on page without re-rendering everything
+        function tickTimers() {
+            let hasActive = false;
+
+            tasks.forEach(task => {
+                if (task.status === 'inprogress' && task.inProgressState === 'active') {
+                    hasActive = true;
+                    const cardEl = document.getElementById(task.id);
+                    if (cardEl) {
+                        const timerDisplay = cardEl.querySelector('.live-timer-display');
+                        if (timerDisplay) {
+                            const ms = getCurrentTaskTimeMs(task);
+                            timerDisplay.textContent = formatDuration(ms);
+                        }
+                    }
+                }
+            });
+
+            // Update modal timer if open
+            if (!taskModal.classList.contains('hidden') && modalTaskId.value) {
+                const currentTask = tasks.find(t => t.id === modalTaskId.value);
+                if (currentTask) {
+                    modalTimeDisplay.textContent = formatDuration(getCurrentTaskTimeMs(currentTask));
+                }
+            }
+
+            // Update stats badge
+            const activeCount = tasks.filter(t => t.status === 'inprogress' && t.inProgressState === 'active').length;
+            const activeBadge = document.getElementById('stat-active-badge');
+            if (activeCount > 0) {
+                activeBadge.classList.remove('hidden');
+                activeBadge.textContent = `${activeCount} Running`;
+            } else {
+                activeBadge.classList.add('hidden');
+            }
+
+            // Update total time in stats
+            updateLiveTotalTimeStat();
+        }
+
+        // Run timer update every 1 second
+        setInterval(tickTimers, 1000);
+
+        // --- Task Actions: Pause, Resume, Reset Time ---
+        function pauseTask(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task || task.status !== 'inprogress') return;
+
+            if (task.inProgressState === 'active' && task.lastStartedAt) {
+                task.totalTimeSpentMs = (task.totalTimeSpentMs || 0) + (Date.now() - task.lastStartedAt);
+                task.lastStartedAt = null;
+            }
+            task.inProgressState = 'paused';
+            saveTasks();
+            renderAllTasks();
+            showToast(`Task paused: "${task.title}"`, 'info');
+        }
+
+        function resumeTask(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task || task.status !== 'inprogress') return;
+
+            task.lastStartedAt = Date.now();
+            task.inProgressState = 'active';
+            saveTasks();
+            renderAllTasks();
+            showToast(`Resumed tracking: "${task.title}"`, 'success');
+        }
+
+        function resetTaskTime(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            showConfirm('Reset Time Tracking?', `Clear all tracked time (${formatDuration(getCurrentTaskTimeMs(task))}) for this task?`, () => {
+                task.totalTimeSpentMs = 0;
+                if (task.inProgressState === 'active') {
+                    task.lastStartedAt = Date.now();
+                } else {
+                    task.lastStartedAt = null;
+                }
+                saveTasks();
+                renderAllTasks();
+                showToast('Task time reset to 0', 'info');
+            });
+        }
+
+        // --- Move Task Between Columns ---
+        function moveTask(taskId, targetStatus) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task || task.status === targetStatus) return;
+
+            const oldStatus = task.status;
+
+            // Handle timer when leaving 'inprogress'
+            if (oldStatus === 'inprogress' && task.inProgressState === 'active' && task.lastStartedAt) {
+                task.totalTimeSpentMs = (task.totalTimeSpentMs || 0) + (Date.now() - task.lastStartedAt);
+                task.lastStartedAt = null;
+            }
+
+            // Setting new status
+            task.status = targetStatus;
+
+            if (targetStatus === 'inprogress') {
+                // When entering inprogress, start active
+                task.inProgressState = 'active';
+                task.lastStartedAt = Date.now();
+                task.completedAt = null;
+                showToast(`Started In Progress: "${task.title}"`, 'info');
+            } else if (targetStatus === 'done') {
+                task.inProgressState = 'idle';
+                task.completedAt = Date.now();
+                showToast(`Task Completed! 🎉 Time spent: ${formatDuration(task.totalTimeSpentMs)}`, 'success');
+
+                // Celebrate with Confetti!
+                myConfetti({
+                    particleCount: 120,
+                    spread: 80,
+                    origin: { y: 0.6 }
+                });
+            } else {
+                // Moved back to 'todo'
+                task.inProgressState = 'idle';
+                task.completedAt = null;
+            }
+
+            saveTasks();
+            renderAllTasks();
+        }
+
+        // --- Task Card Element Builder ---
+        function createTaskCardElement(task) {
+            const card = document.createElement('div');
+            card.id = task.id;
+            card.draggable = true;
+            card.className = 'task-card bg-white rounded-xl p-4 border border-slate-200/90 shadow-2xs hover:shadow-md transition-all space-y-3';
+
+            // Due Status Check
+            const dueInfo = getDueStatus(task.scheduledDate, task.status === 'done');
+
+            // Header of card: Category + Priority + Action Menu
+            let headerHtml = `
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        ${task.category ? `<span class="text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">${escapeHtml(task.category)}</span>` : ''}
+                        ${getPriorityBadge(task.priority)}
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button class="edit-btn p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors" title="Edit Task Details">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                        </button>
+                        <button class="delete-btn p-1 text-slate-400 hover:text-rose-600 rounded transition-colors" title="Delete Task">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            // Title & Description
+            const doneDecoration = task.status === 'done' ? 'line-through text-slate-500' : 'text-slate-800';
+            let contentHtml = `
+                <div>
+                    <h4 class="font-bold text-sm ${doneDecoration} leading-snug break-words">${escapeHtml(task.title)}</h4>
+                    ${task.description ? `<p class="text-xs text-slate-500 mt-1 line-clamp-2">${escapeHtml(task.description)}</p>` : ''}
+                </div>
+            `;
+
+            // Scheduled Date / Completion Date Badges
+            let dateBadgeHtml = '';
+            const badges = [];
+            if (dueInfo) {
+                badges.push(`
+                    <div class="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border ${dueInfo.badgeClass}">
+                        <span>${dueInfo.label}</span>
+                    </div>
+                `);
+            }
+            if (task.estimatedDate) {
+                const estDate = new Date(task.estimatedDate);
+                const isPastTarget = task.status !== 'done' && estDate < new Date();
+                const targetClass = isPastTarget 
+                    ? 'bg-rose-50 text-rose-700 border-rose-200 font-semibold' 
+                    : 'bg-teal-50 text-teal-800 border-teal-200';
+                const targetLabel = isPastTarget
+                    ? `⚠️ Past Target (${formatDateTime(estDate)})`
+                    : `🎯 Target: ${formatDateTime(estDate)}`;
+                badges.push(`
+                    <div class="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border ${targetClass}" title="Approximate / target completion date">
+                        <span>${targetLabel}</span>
+                    </div>
+                `);
+            }
+            if (badges.length > 0) {
+                dateBadgeHtml = `<div class="flex flex-wrap gap-1.5">${badges.join('')}</div>`;
+            }
+
+            // In-Progress Live Timer & Pause / Resume Controls
+            let inProgressControlsHtml = '';
+            if (task.status === 'inprogress') {
+                const isActive = task.inProgressState === 'active';
+                const currentDuration = formatDuration(getCurrentTaskTimeMs(task));
+
+                inProgressControlsHtml = `
+                    <div class="bg-amber-50/80 border border-amber-200/90 rounded-xl p-2.5 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500 pulse-active' : 'bg-amber-500'}"></span>
+                                <span class="text-[11px] font-semibold text-amber-900">${isActive ? 'Active Working' : 'Paused'}</span>
+                            </div>
+                            <span class="live-timer-display font-mono font-bold text-xs text-amber-950">${currentDuration}</span>
+                        </div>
+
+                        <div class="flex items-center gap-1.5 pt-0.5">
+                            ${isActive ? `
+                                <button class="pause-task-btn flex-1 py-1.5 px-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 shadow-2xs transition-colors">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    Pause
+                                </button>
+                            ` : `
+                                <button class="resume-task-btn flex-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 shadow-2xs transition-colors">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    Resume
+                                </button>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Done Column Specific Stats (Total Time Taken & Completed Date)
+            let doneStatsHtml = '';
+            if (task.status === 'done') {
+                const totalSpent = formatDuration(task.totalTimeSpentMs);
+                const completedDateStr = task.completedAt ? formatDateTime(task.completedAt) : 'Recently';
+
+                let targetComparisonHtml = '';
+                if (task.estimatedDate) {
+                    const estMs = new Date(task.estimatedDate).getTime();
+                    const compMs = task.completedAt || Date.now();
+                    const onTime = compMs <= estMs;
+                    targetComparisonHtml = `
+                        <div class="flex items-center justify-between text-[11px] pt-1 border-t border-emerald-200/50">
+                            <span class="text-slate-600">🎯 Target:</span>
+                            <span class="font-medium ${onTime ? 'text-emerald-700 font-semibold' : 'text-amber-800 font-semibold'}">
+                                ${formatDateTime(task.estimatedDate)} ${onTime ? '(On Time ✓)' : '(Late)'}
+                            </span>
+                        </div>
+                    `;
+                }
+
+                doneStatsHtml = `
+                    <div class="bg-emerald-50/90 border border-emerald-200 rounded-xl p-2.5 space-y-1.5 text-xs">
+                        <div class="flex items-center justify-between text-emerald-900 font-medium">
+                            <span class="flex items-center gap-1 text-[11px]">
+                                <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                                Completed:
+                            </span>
+                            <span class="text-[11px] font-semibold text-emerald-800">${completedDateStr}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-emerald-950 font-bold border-t border-emerald-200/60 pt-1">
+                            <span class="text-[11px]">⏱️ Time Taken:</span>
+                            <span class="font-mono text-emerald-700">${totalSpent}</span>
+                        </div>
+                        ${targetComparisonHtml}
+                    </div>
+                `;
+            }
+
+            // Quick Status Transition Arrow Buttons
+            let quickActionsHtml = `
+                <div class="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                    <span class="text-[10px] text-slate-400">Created ${new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                    <div class="flex items-center gap-1">
+                        ${task.status !== 'todo' ? `
+                            <button class="move-todo-btn px-2 py-1 text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded transition-colors" title="Move to To Do">
+                                ← To Do
+                            </button>
+                        ` : ''}
+                        ${task.status !== 'inprogress' ? `
+                            <button class="move-inprogress-btn px-2 py-1 text-[11px] font-medium text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 rounded transition-colors" title="Start Working">
+                                → In Progress
+                            </button>
+                        ` : ''}
+                        ${task.status !== 'done' ? `
+                            <button class="move-done-btn px-2 py-1 text-[11px] font-medium text-emerald-700 hover:text-emerald-900 bg-emerald-100 hover:bg-emerald-200 rounded transition-colors" title="Mark Done">
+                                ✓ Done
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+
+            card.innerHTML = headerHtml + contentHtml + (dateBadgeHtml ? `<div>${dateBadgeHtml}</div>` : '') + inProgressControlsHtml + doneStatsHtml + quickActionsHtml;
+
+            // --- Event Listeners for Card ---
+            // Drag and Drop
+            card.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', task.id);
+                card.classList.add('dragging');
+            });
+            card.addEventListener('dragend', () => {
+                card.classList.remove('dragging');
+            });
+
+            // Edit Button
+            card.querySelector('.edit-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                openEditModal(task.id);
+            });
+
+            // Delete Button
+            card.querySelector('.delete-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                showConfirm('Delete Task?', `Are you sure you want to permanently delete "${task.title}"?`, () => {
+                    tasks = tasks.filter(t => t.id !== task.id);
+                    saveTasks();
+                    renderAllTasks();
+                    showToast('Task deleted', 'info');
+                });
+            });
+
+            // In-Progress Pause / Resume Buttons
+            const pauseBtn = card.querySelector('.pause-task-btn');
+            if (pauseBtn) {
+                pauseBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    pauseTask(task.id);
+                });
+            }
+            const resumeBtn = card.querySelector('.resume-task-btn');
+            if (resumeBtn) {
+                resumeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    resumeTask(task.id);
+                });
+            }
+
+            // Quick Move Buttons
+            const moveTodoBtn = card.querySelector('.move-todo-btn');
+            if (moveTodoBtn) moveTodoBtn.addEventListener('click', (e) => { e.stopPropagation(); moveTask(task.id, 'todo'); });
+
+            const moveInprogressBtn = card.querySelector('.move-inprogress-btn');
+            if (moveInprogressBtn) moveInprogressBtn.addEventListener('click', (e) => { e.stopPropagation(); moveTask(task.id, 'inprogress'); });
+
+            const moveDoneBtn = card.querySelector('.move-done-btn');
+            if (moveDoneBtn) moveDoneBtn.addEventListener('click', (e) => { e.stopPropagation(); moveTask(task.id, 'done'); });
+
+            // Clicking card body also opens modal
+            card.addEventListener('dblclick', () => openEditModal(task.id));
+
+            return card;
+        }
+
+        // Helper: Escape HTML to prevent XSS
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // --- Render Tasks onto Board with Active Filters & Sorting ---
+        function renderAllTasks() {
+            // Clear containers
+            todoTasksContainer.innerHTML = '';
+            inprogressTasksContainer.innerHTML = '';
+            doneTasksContainer.innerHTML = '';
+
+            let filteredTasks = [...tasks];
+
+            // 1. Search Query Filter
+            if (activeFilters.search) {
+                const q = activeFilters.search.toLowerCase();
+                filteredTasks = filteredTasks.filter(t => 
+                    (t.title && t.title.toLowerCase().includes(q)) ||
+                    (t.description && t.description.toLowerCase().includes(q)) ||
+                    (t.category && t.category.toLowerCase().includes(q))
+                );
+            }
+
+            // 2. Priority Filter
+            if (activeFilters.priority !== 'all') {
+                filteredTasks = filteredTasks.filter(t => t.priority === activeFilters.priority);
+            }
+
+            // 3. Due Date Filter
+            if (activeFilters.due !== 'all') {
+                const now = new Date();
+                const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+                filteredTasks = filteredTasks.filter(t => {
+                    if (activeFilters.due === 'has_date') return !!t.scheduledDate;
+                    if (activeFilters.due === 'has_target') return !!t.estimatedDate;
+                    if (!t.scheduledDate) return false;
+                    const d = new Date(t.scheduledDate);
+                    if (activeFilters.due === 'overdue') return d < now && t.status !== 'done';
+                    if (activeFilters.due === 'today') return d >= startOfToday && d <= endOfToday;
+                    if (activeFilters.due === 'upcoming') return d > endOfToday;
+                    return true;
+                });
+            }
+
+            // 4. Sorting
+            filteredTasks.sort((a, b) => {
+                switch (activeFilters.sortBy) {
+                    case 'date_asc':
+                        if (!a.scheduledDate) return 1;
+                        if (!b.scheduledDate) return -1;
+                        return new Date(a.scheduledDate) - new Date(b.scheduledDate);
+                    case 'target_asc':
+                        if (!a.estimatedDate) return 1;
+                        if (!b.estimatedDate) return -1;
+                        return new Date(a.estimatedDate) - new Date(b.estimatedDate);
+                    case 'priority_desc': {
+                        const weights = { urgent: 4, high: 3, medium: 2, low: 1 };
+                        return (weights[b.priority] || 0) - (weights[a.priority] || 0);
+                    }
+                    case 'time_desc':
+                        return getCurrentTaskTimeMs(b) - getCurrentTaskTimeMs(a);
+                    case 'title_asc':
+                        return a.title.localeCompare(b.title);
+                    case 'created_desc':
+                    default:
+                        return (b.createdAt || 0) - (a.createdAt || 0);
+                }
+            });
+
+            // Distribute into columns
+            let todoCount = 0;
+            let inprogressCount = 0;
+            let doneCount = 0;
+
+            filteredTasks.forEach(task => {
+                const card = createTaskCardElement(task);
+                if (task.status === 'todo') {
+                    todoTasksContainer.appendChild(card);
+                    todoCount++;
+                } else if (task.status === 'inprogress') {
+                    inprogressTasksContainer.appendChild(card);
+                    inprogressCount++;
+                } else if (task.status === 'done') {
+                    doneTasksContainer.appendChild(card);
+                    doneCount++;
+                }
+            });
+
+            // Update column badges
+            document.getElementById('todo-count').textContent = todoCount;
+            document.getElementById('inprogress-count').textContent = inprogressCount;
+            document.getElementById('done-count').textContent = doneCount;
+
+            // Empty state placeholders if needed
+            renderEmptyStateIfNeeded(todoTasksContainer, 'No tasks to do', 'Drag tasks here or click "+ New Task"');
+            renderEmptyStateIfNeeded(inprogressTasksContainer, 'No tasks in progress', 'Move a task here to start timer');
+            renderEmptyStateIfNeeded(doneTasksContainer, 'No completed tasks yet', 'Finished tasks will show completed date & time taken here');
+        }
+
+        function renderEmptyStateIfNeeded(container, title, subtitle) {
+            if (container.children.length === 0) {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'h-32 border-2 border-dashed border-slate-300/80 rounded-xl flex flex-col items-center justify-center text-center p-4 text-slate-400 select-none';
+                placeholder.innerHTML = `
+                    <p class="text-xs font-semibold text-slate-500">${title}</p>
+                    <p class="text-[11px] text-slate-400 mt-0.5">${subtitle}</p>
+                `;
+                container.appendChild(placeholder);
+            }
+        }
+
+        // --- Dashboard Statistics Calculation ---
+        function updateDashboardStats() {
+            const total = tasks.length;
+            const inprogressList = tasks.filter(t => t.status === 'inprogress');
+            const inprogressTotal = inprogressList.length;
+            const activeRunning = inprogressList.filter(t => t.inProgressState === 'active').length;
+            const pausedRunning = inprogressTotal - activeRunning;
+
+            const completed = tasks.filter(t => t.status === 'done').length;
+            const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+            // Overdue check
+            const now = new Date();
+            const overdue = tasks.filter(t => t.status !== 'done' && t.scheduledDate && new Date(t.scheduledDate) < now).length;
+
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-inprogress').textContent = inprogressTotal;
+            document.getElementById('stat-inprogress-breakdown').textContent = `${activeRunning} active · ${pausedRunning} paused`;
+            document.getElementById('stat-completed').textContent = completed;
+            document.getElementById('stat-completion-rate').textContent = `${completionRate}% rate`;
+            document.getElementById('stat-overdue').textContent = overdue;
+
+            updateLiveTotalTimeStat();
+        }
+
+        function updateLiveTotalTimeStat() {
+            let totalMs = 0;
+            tasks.forEach(t => {
+                totalMs += getCurrentTaskTimeMs(t);
+            });
+            document.getElementById('stat-total-time').textContent = formatDuration(totalMs, false);
+        }
+
+        // --- Drag and Drop for Columns ---
+        const columns = document.querySelectorAll('.kanban-column');
+        columns.forEach(col => {
+            col.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                col.classList.add('drag-over');
+            });
+            col.addEventListener('dragleave', () => {
+                col.classList.remove('drag-over');
+            });
+            col.addEventListener('drop', (e) => {
+                e.preventDefault();
+                col.classList.remove('drag-over');
+                const taskId = e.dataTransfer.getData('text/plain');
+                if (!taskId) return;
+
+                let targetStatus = 'todo';
+                if (col.id === 'inprogress-column') targetStatus = 'inprogress';
+                else if (col.id === 'done-column') targetStatus = 'done';
+
+                moveTask(taskId, targetStatus);
+            });
+        });
+
+        // --- Task Creation ---
+        function handleAddTask() {
+            const title = taskTitleInput.value.trim();
+            if (!title) {
+                showToast('Please enter a task title', 'error');
+                taskTitleInput.focus();
+                return;
+            }
+
+            const newTask = createTaskObject(title, 'todo');
+            tasks.unshift(newTask);
+            saveTasks();
+            renderAllTasks();
+
+            // Clear inputs
+            taskTitleInput.value = '';
+            taskDescInput.value = '';
+            taskCategoryInput.value = '';
+            taskEstimatedDateInput.value = '';
+            setDefaultScheduleDate();
+
+            showToast('Task added to schedule!', 'success');
+        }
+
+        addTaskBtn.addEventListener('click', handleAddTask);
+        taskTitleInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') handleAddTask();
+        });
+
+        toggleAddPanelBtn.addEventListener('click', () => {
+            taskTitleInput.focus();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        // --- Edit Modal Logic ---
+        function openEditModal(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            modalTaskId.value = task.id;
+            modalTitleInput.value = task.title || '';
+            modalDescInput.value = task.description || '';
+            modalPriorityInput.value = task.priority || 'medium';
+            modalCategoryInput.value = task.category || '';
+
+            if (task.scheduledDate) {
+                const d = new Date(task.scheduledDate);
+                const isoString = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                modalDateInput.value = isoString;
+            } else {
+                modalDateInput.value = '';
+            }
+
+            if (task.estimatedDate) {
+                const d = new Date(task.estimatedDate);
+                const isoString = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                modalEstimatedDateInput.value = isoString;
+            } else {
+                modalEstimatedDateInput.value = '';
+            }
+
+            modalStatusBadge.textContent = task.status.toUpperCase();
+            modalTimeDisplay.textContent = formatDuration(getCurrentTaskTimeMs(task));
+
+            modalCreatedInfo.textContent = `Created: ${formatDateTime(task.createdAt)}`;
+            modalCompletedInfo.textContent = task.completedAt ? `Completed: ${formatDateTime(task.completedAt)}` : 'Completed: Not yet completed';
+
+            taskModal.classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            taskModal.classList.add('hidden');
+        }
+
+        closeModalBtn.addEventListener('click', closeEditModal);
+        cancelModalBtn.addEventListener('click', closeEditModal);
+
+        saveModalBtn.addEventListener('click', () => {
+            const taskId = modalTaskId.value;
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            const newTitle = modalTitleInput.value.trim();
+            if (!newTitle) {
+                showToast('Task title cannot be empty', 'error');
+                return;
+            }
+
+            task.title = newTitle;
+            task.description = modalDescInput.value.trim();
+            task.priority = modalPriorityInput.value;
+            task.category = modalCategoryInput.value.trim();
+            task.scheduledDate = modalDateInput.value ? new Date(modalDateInput.value).toISOString() : null;
+            task.estimatedDate = modalEstimatedDateInput.value ? new Date(modalEstimatedDateInput.value).toISOString() : null;
+
+            saveTasks();
+            renderAllTasks();
+            closeEditModal();
+            showToast('Task updated successfully', 'success');
+        });
+
+        // Modal Time Adjustments (+5m, +15m, +1h, -15m)
+        document.querySelectorAll('.adjust-time-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const taskId = modalTaskId.value;
+                const task = tasks.find(t => t.id === taskId);
+                if (!task) return;
+
+                const mins = parseInt(btn.dataset.mins, 10);
+                const deltaMs = mins * 60 * 1000;
+                task.totalTimeSpentMs = Math.max(0, (task.totalTimeSpentMs || 0) + deltaMs);
+                modalTimeDisplay.textContent = formatDuration(getCurrentTaskTimeMs(task));
+                saveTasks();
+                renderAllTasks();
+                showToast(`Adjusted task time by ${mins > 0 ? '+' : ''}${mins} mins`, 'info');
+            });
+        });
+
+        modalResetTimeBtn.addEventListener('click', () => {
+            const taskId = modalTaskId.value;
+            resetTaskTime(taskId);
+            const task = tasks.find(t => t.id === taskId);
+            if (task) {
+                modalTimeDisplay.textContent = '00m 00s';
+            }
+        });
+
+        // --- Search & Filters Event Listeners ---
+        searchInput.addEventListener('input', (e) => {
+            activeFilters.search = e.target.value.trim();
+            clearSearchBtn.classList.toggle('hidden', !activeFilters.search);
+            renderAllTasks();
+        });
+
+        clearSearchBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            activeFilters.search = '';
+            clearSearchBtn.classList.add('hidden');
+            renderAllTasks();
+        });
+
+        filterPriority.addEventListener('change', (e) => {
+            activeFilters.priority = e.target.value;
+            renderAllTasks();
+        });
+
+        filterDue.addEventListener('change', (e) => {
+            activeFilters.due = e.target.value;
+            renderAllTasks();
+        });
+
+        sortBy.addEventListener('change', (e) => {
+            activeFilters.sortBy = e.target.value;
+            renderAllTasks();
+        });
+
+        resetFiltersBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            clearSearchBtn.classList.add('hidden');
+            filterPriority.value = 'all';
+            filterDue.value = 'all';
+            sortBy.value = 'created_desc';
+
+            activeFilters = {
+                search: '',
+                priority: 'all',
+                due: 'all',
+                sortBy: 'created_desc'
+            };
+            renderAllTasks();
+            showToast('Filters reset', 'info');
+        });
+
+        // --- Data Menu Dropdown ---
+        dataMenuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dataDropdown.classList.toggle('hidden');
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!dataDropdown.contains(e.target) && e.target !== dataMenuBtn) {
+                dataDropdown.classList.add('hidden');
+            }
+        });
+
+        // --- Export to JSON Backup ---
+        exportJsonBtn.addEventListener('click', () => {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(tasks, null, 2));
+            const dlAnchor = document.createElement('a');
+            const dateStr = new Date().toISOString().slice(0, 10);
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `pro-scheduler-backup-${dateStr}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+            dataDropdown.classList.add('hidden');
+            showToast('Exported tasks to JSON backup!', 'success');
+        });
+
+        // --- Export to CSV Timesheet Report ---
+        exportCsvBtn.addEventListener('click', () => {
+            const headers = ["ID", "Title", "Category", "Priority", "Status", "Scheduled Date", "Target Completion Date", "Completed Date", "Time Spent (Seconds)", "Time Spent (Formatted)"];
+            const rows = tasks.map(t => [
+                `"${t.id}"`,
+                `"${(t.title || '').replace(/"/g, '""')}"`,
+                `"${(t.category || '').replace(/"/g, '""')}"`,
+                `"${t.priority || 'medium'}"`,
+                `"${t.status}"`,
+                `"${t.scheduledDate ? formatDateTime(t.scheduledDate) : ''}"`,
+                `"${t.estimatedDate ? formatDateTime(t.estimatedDate) : ''}"`,
+                `"${t.completedAt ? formatDateTime(t.completedAt) : ''}"`,
+                Math.round(getCurrentTaskTimeMs(t) / 1000),
+                `"${formatDuration(getCurrentTaskTimeMs(t))}"`
+            ]);
+
+            const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            const dateStr = new Date().toISOString().slice(0, 10);
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `scheduler-timesheet-${dateStr}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            dataDropdown.classList.add('hidden');
+            showToast('Timesheet exported to CSV!', 'success');
+        });
+
+        // --- Import from JSON Backup ---
+        importJsonInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const imported = JSON.parse(event.target.result);
+                    if (!Array.isArray(imported)) {
+                        throw new Error("Invalid format: expected array of tasks");
+                    }
+
+                    showConfirm("Import Tasks Backup?", `Found ${imported.length} tasks in file. Merge with existing tasks or overwrite?`, () => {
+                        // Merge by id
+                        const idMap = new Map();
+                        tasks.forEach(t => idMap.set(t.id, t));
+                        imported.forEach(t => {
+                            if (t.id && t.title) idMap.set(t.id, t);
+                        });
+                        tasks = Array.from(idMap.values());
+                        saveTasks();
+                        renderAllTasks();
+                        showToast(`Successfully imported ${imported.length} tasks!`, 'success');
+                    });
+                } catch (err) {
+                    showToast('Failed to import: ' + err.message, 'error');
+                }
+                importJsonInput.value = '';
+                dataDropdown.classList.add('hidden');
+            };
+            reader.readAsText(file);
+        });
+
+        // --- Clear Completed Tasks ---
+        clearCompletedBtn.addEventListener('click', () => {
+            const completedCount = tasks.filter(t => t.status === 'done').length;
+            if (completedCount === 0) {
+                showToast('No completed tasks to clear', 'info');
+                dataDropdown.classList.add('hidden');
+                return;
+            }
+
+            showConfirm('Clear Completed Tasks?', `Delete all ${completedCount} completed tasks permanently?`, () => {
+                tasks = tasks.filter(t => t.status !== 'done');
+                saveTasks();
+                renderAllTasks();
+                showToast(`Cleared ${completedCount} completed tasks`, 'info');
+            });
+            dataDropdown.classList.add('hidden');
+        });
+
+        // --- Clear All Tasks ---
+        clearAllBtn.addEventListener('click', () => {
+            if (tasks.length === 0) {
+                showToast('No tasks to clear', 'info');
+                dataDropdown.classList.add('hidden');
+                return;
+            }
+
+            showConfirm('Clear ALL Tasks?', `Warning: This will delete all ${tasks.length} tasks and time tracking records permanently!`, () => {
+                tasks = [];
+                saveTasks();
+                renderAllTasks();
+                showToast('All tasks cleared', 'info');
+            });
+            dataDropdown.classList.add('hidden');
+        });
+
+        // --- Load Sample / Demo Tasks ---
+        loadSampleBtn.addEventListener('click', () => {
+            const now = Date.now();
+            const tomorrow = new Date(now + 24 * 3600 * 1000).toISOString();
+            const dayAfterTomorrow = new Date(now + 48 * 3600 * 1000).toISOString();
+            const yesterday = new Date(now - 24 * 3600 * 1000).toISOString();
+
+            const sampleTasks = [
+                {
+                    id: 'task-sample-1',
+                    title: 'Prepare quarterly sprint planning deck',
+                    description: 'Outline key milestones, resource allocation, and Q1 deliverables.',
+                    status: 'todo',
+                    priority: 'high',
+                    category: 'Planning',
+                    createdAt: now - 3600000 * 5,
+                    scheduledDate: tomorrow,
+                    estimatedDate: dayAfterTomorrow, // Target completion
+                    completedAt: null,
+                    inProgressState: 'idle',
+                    totalTimeSpentMs: 0,
+                    lastStartedAt: null
+                },
+                {
+                    id: 'task-sample-2',
+                    title: 'Investigate payment webhook retry delays',
+                    description: 'Check worker queue latency and retry policies under load.',
+                    status: 'inprogress',
+                    priority: 'urgent',
+                    category: 'Bug Fix',
+                    createdAt: now - 3600000 * 10,
+                    scheduledDate: yesterday, // Overdue demo
+                    estimatedDate: tomorrow, // Target completion
+                    completedAt: null,
+                    inProgressState: 'active', // Active timer ticking
+                    totalTimeSpentMs: 42 * 60 * 1000, // 42 mins already spent
+                    lastStartedAt: now - 120000 // running for 2 mins
+                },
+                {
+                    id: 'task-sample-3',
+                    title: 'Review team pull requests and code standards',
+                    description: 'Provide feedback on auth refactor and state management modules.',
+                    status: 'inprogress',
+                    priority: 'medium',
+                    category: 'Review',
+                    createdAt: now - 3600000 * 8,
+                    scheduledDate: tomorrow,
+                    estimatedDate: null, // Optional, can be null
+                    completedAt: null,
+                    inProgressState: 'paused', // Paused demo
+                    totalTimeSpentMs: 25 * 60 * 1000 + 40000, // 25m 40s
+                    lastStartedAt: null
+                },
+                {
+                    id: 'task-sample-4',
+                    title: 'Configure automated local storage database backup',
+                    description: 'Ensure user tasks and time logs can be exported seamlessly.',
+                    status: 'done',
+                    priority: 'high',
+                    category: 'Feature',
+                    createdAt: now - 3600000 * 24,
+                    scheduledDate: yesterday,
+                    estimatedDate: new Date(now - 3600000 * 1).toISOString(), // Target was 1 hr ago, completed 2 hrs ago (On time!)
+                    completedAt: now - 3600000 * 2,
+                    inProgressState: 'idle',
+                    totalTimeSpentMs: 58 * 60 * 1000 + 15000, // 58m 15s spent
+                    lastStartedAt: null
+                }
+            ];
+
+            tasks = sampleTasks;
+            saveTasks();
+            renderAllTasks();
+            dataDropdown.classList.add('hidden');
+            showToast('Sample tasks loaded! Try pausing, resuming, and moving tasks.', 'success');
+        });
+
+        // --- Application Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            setDefaultScheduleDate();
+            loadTasks();
+        });
+    </script>
+</body>
+</html>
